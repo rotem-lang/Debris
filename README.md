@@ -11,12 +11,19 @@ that into an installable package.
 It targets **closed networks**: no internet on the target machines, an internal git
 server, an internal docker registry, an internal apt mirror.
 
-```bash
-make venv
-make test
+There is nothing to install — Debris uses only the Python standard library, so you clone
+the repository and run it in place:
 
-debris validate examples/online-app/spec.json
-debris build    examples/online-app/spec.json -o dist/
+```bash
+python3 -m debris validate examples/online-app/spec.json
+python3 -m debris build    examples/online-app/spec.json -o dist/
+```
+
+To work on Debris itself, create a venv for the test tooling:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install pytest ruff
+PYTHONPATH=. .venv/bin/pytest -q
 ```
 
 ## Status

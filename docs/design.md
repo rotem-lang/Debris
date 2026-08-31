@@ -29,8 +29,11 @@ Non-goals for v1: systemd units, k8s/Helm backends, apt-repo publishing, vendori
 ## Stack
 
 - **Python 3.12, standard library only** at runtime. A closed network makes every pip dependency a liability, so no `jsonschema`/`PyYAML`/`requests`. Validation is hand-written with precise error messages; `git` and `docker` are invoked as subprocesses.
-- `pyproject.toml` (setuptools) exposing a `debris` console script.
-- `pytest` as the only dev dependency.
+- **No install step and no packaging config.** Debris is delivered by `git bundle`-ing the
+  repository into the closed network and running it from the checkout as `python3 -m debris`.
+  This is only possible while the stdlib-only rule holds.
+- `pytest` and `ruff` are dev-only, installed into a throwaway `.venv`. Tests run as
+  `PYTHONPATH=. .venv/bin/pytest`, since Debris is never installed.
 - Verified available on this machine: `dpkg-deb`, `dpkg-buildpackage`, `docker`, Python 3.12. **`docker compose` (v2 plugin) is not installed here** — offline-mode image baking only needs `docker pull`/`docker save`, so builds work, but any test that shells out to `docker compose` must skip when the plugin is absent.
 
 ---
@@ -192,7 +195,7 @@ debris/
 schema/debris.schema.json    # editor autocomplete only, not runtime validation
 examples/online-app/  examples/offline-app/
 tests/
-pyproject.toml  Makefile  README.md
+ruff.toml  README.md  CLAUDE.md
 ```
 
 Two registries (`sources`, `backends`) keep the extension points explicit — a future `backends/helm.py` implements the same protocol and the CLI needs no changes.
@@ -229,11 +232,11 @@ docker compose --project-name <pkg> --env-file /opt/<pkg>/current/.env \
 ## CLI
 
 ```
-debris validate <spec.json>              # schema + cross-field checks, no network
-debris build    <spec.json> [-o dist/] [--mode online|offline] [--var K=V]
+python3 -m debris validate <spec.json>              # schema + cross-field checks, no network
+python3 -m debris build    <spec.json> [-o dist/] [--mode online|offline] [--var K=V]
                             [--source-dir DIR] [--work-dir DIR] [--keep-work]
-debris init     <name> [--offline]       # scaffold a spec + assets dir
-debris inspect  <file.deb>               # print the embedded .debris-manifest.json
+python3 -m debris init     <name> [--offline]       # scaffold a spec + assets dir
+python3 -m debris inspect  <file.deb>               # print the embedded .debris-manifest.json
 ```
 
 `--var` overrides `deployment.env.vars` for CI. `--source-dir` substitutes a local checkout for the git fetch — fast iteration, and the escape hatch when the build host can't reach git. Output follows Debian convention: `<name>_<version>_<arch>.deb`.
@@ -248,7 +251,7 @@ Branches follow the existing `ref/slim-gitignore` convention (`<type>/<kebab-cas
 
 | # | Branch | Scope | Depends on |
 |---|---|---|---|
-| 0 | `chore/scaffold` | `CLAUDE.md`, `pyproject.toml` (setuptools + `debris` console script), `Makefile`, empty `debris/` package with `cli.py` argparse skeleton, `tests/` with one smoke test, `.gitignore` touch-up | — |
+| 0 | `chore/scaffold` | `CLAUDE.md`, `docs/design.md`, `debris/` package with `cli.py` argparse skeleton, `conftest.py`, `ruff.toml`, `tests/` smoke tests, `.gitignore` touch-up | — |
 | 1 | `feat/spec-validation` | `spec.py` dataclasses + loader + hand-written validator, `errors.py`, `schema/debris.schema.json`, `debris validate`, `debris init` | 0 |
 | 2 | `feat/sources-and-render` | `sources/` (protocol + registry, `local.py`, `git.py`), `render.py` | 1 |
 | 3 | `feat/deb-build` | `staging.py`, `control.py`, `dpkg.py`, `builder.py`, `backends/compose.py`, maintainer-script templates, `debris build`, `debris inspect` | 2 |
@@ -259,7 +262,7 @@ Branches follow the existing `ref/slim-gitignore` convention (`<type>/<kebab-cas
 
 **Sequencing.** 0→1→2→3 is a hard chain — each needs the previous one's types to exist. Once 3 lands, **4, 5 and 6 are independent and can run in parallel**; 7 closes it out. Branch 3 is the large one and is the natural place to stop and review, since it produces the first installable `.deb`.
 
-**Definition of done per branch:** `make test` green, `make lint` clean, and for 3–6 an artifact or container assertion actually exercised — not just unit tests.
+**Definition of done per branch:** `pytest` green, `ruff check` clean, and for 3–6 an artifact or container assertion actually exercised — not just unit tests.
 
 ### Branch 0 detail: `CLAUDE.md`
 
@@ -269,7 +272,7 @@ Written first so every later session starts with the context this planning conve
 - **Hard constraints** — stdlib-only at runtime (no pip deps to mirror); `git`/`docker`/`dpkg-deb` as subprocesses; build must work with no internet and no debhelper.
 - **Architecture** — the spec-file-driven pipeline (fetch → render → stage → `dpkg-deb`), the `sources/` and `backends/` registries and why they exist (k8s later), and the install layout.
 - **The decisions that aren't obvious from the code**, each with its reasoning: why one version on disk at a time (dpkg deletes the old version's files on upgrade, so multi-version coexistence under a single package name is not possible); why rollback is "archive every `.deb`" rather than a symlink flip; why `current` is a shipped symlink instead of postinst logic; why offline image lists are explicit in the spec rather than parsed from compose (avoids a YAML dependency); why runtime data must not be bind-mounted inside the version directory.
-- **Commands** — `make test`, `make lint`, `debris build examples/online-app/spec.json -o dist/ --source-dir ...`.
+- **Commands** — `pytest`, `ruff check`, `python3 -m debris build examples/online-app/spec.json -o dist/ --source-dir ...`.
 - **Conventions** — branch naming, `dev` as the integration branch, POSIX `sh` for generated scripts.
 - **Status** — the branch table above, with what's landed.
 
@@ -297,4 +300,4 @@ Shell-lint the generated maintainer scripts with `sh -n`, plus `shellcheck` when
 
 **Offline mode** — needs a reachable registry, so the test stands up a throwaway local `registry:2` container with a tiny image pushed to it, builds with `--mode offline`, and asserts `images/images.tar` is in the payload and `docker load` succeeds. Skipped when docker is unavailable.
 
-**Manual smoke** — `debris init demo && debris validate demo/demo.json && debris build demo/demo.json -o dist/`.
+**Manual smoke** — `python3 -m debris init demo && python3 -m debris validate demo/demo.json && python3 -m debris build demo/demo.json -o dist/`.

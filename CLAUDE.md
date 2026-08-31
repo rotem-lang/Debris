@@ -13,12 +13,27 @@ Everything is shaped by one constraint: **the target machines sit on a closed ne
 No internet, an internal git server, an internal docker registry, an internal apt mirror.
 Anything that assumes outbound connectivity is wrong here.
 
+## How Debris is delivered and run
+
+`git bundle` the repository, carry it across to the closed network, clone it there, and run
+it in place:
+
+```bash
+python3 -m debris build spec.json -o dist/
+```
+
+**There is no install step and no packaging config** — no `pyproject.toml`, no wheel, no
+`debris` console script. That is only possible because of the stdlib-only rule below, and
+it is why that rule is worth defending. Any change that introduces a runtime dependency
+also introduces a deployment problem.
+
 ## Hard constraints
 
 - **Runtime dependencies: standard library only.** No `jsonschema`, no `PyYAML`, no
-  `requests`. Every pip dependency is one more thing to mirror inside the closed network,
-  so spec validation is hand-written and `git` / `docker` / `dpkg-deb` are invoked as
-  subprocesses. `pytest` and `ruff` are dev-only and never imported by `debris/`.
+  `requests`. A dependency would mean mirroring packages into the closed network and
+  reintroducing an install step, so spec validation is hand-written and `git` / `docker` /
+  `dpkg-deb` are invoked as subprocesses. `pytest` and `ruff` are dev-only and must never
+  be imported by anything under `debris/`.
 - **No debhelper.** Packages are built by staging a filesystem tree, generating
   `DEBIAN/control` plus maintainer scripts, and calling `dpkg-deb --build`. A build host
   needs only `dpkg-deb`, `git`, `docker` and Python 3.12.
@@ -93,19 +108,34 @@ a plausible-looking alternative that does not work.
 
 ## Commands
 
-```bash
-make venv           # create .venv and install dev deps (pytest, ruff)
-make test           # pytest
-make lint           # ruff check + ruff format --check
-make clean
+Run Debris straight from the repository root:
 
-debris validate examples/online-app/spec.json
-debris build    examples/online-app/spec.json -o dist/ --source-dir /path/to/checkout
-debris inspect  dist/acme-portal_1.4.2_all.deb
+```bash
+python3 -m debris validate examples/online-app/spec.json
+python3 -m debris build    examples/online-app/spec.json -o dist/ --source-dir /path/to/checkout
+python3 -m debris inspect  dist/acme-portal_1.4.2_all.deb
 ```
 
 `--source-dir` substitutes a local checkout for the git fetch. Use it in tests and
 whenever the build host can't reach the git server.
+
+Development tooling lives in a throwaway venv, needed only to run the tests and linter:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install pytest ruff   # one-time setup
+PYTHONPATH=. .venv/bin/pytest -q   # tests
+.venv/bin/ruff check .             # lint
+.venv/bin/ruff format .            # format
+```
+
+`PYTHONPATH=.` is required: Debris is never installed, and pytest does not put the
+repository root on `sys.path` by itself, so without it every test fails with
+`ModuleNotFoundError: No module named 'debris'`.
+
+`python3-venv` is not installed by default on every machine (`apt install python3.12-venv`).
+
+There is deliberately no task runner, no packaging config, and no `pip install` of Debris
+itself.
 
 ## Conventions
 
@@ -121,7 +151,7 @@ Build order — `0 → 1 → 2 → 3` is a hard chain; once 3 lands, 4, 5 and 6 
 
 | # | Branch | Scope | State |
 |---|---|---|---|
-| 0 | `chore/scaffold` | `CLAUDE.md`, `pyproject.toml`, `Makefile`, package + CLI skeleton, tests | in progress |
+| 0 | `chore/scaffold` | `CLAUDE.md`, `docs/design.md`, package + CLI skeleton, tests | done |
 | 1 | `feat/spec-validation` | `spec.py`, `errors.py`, JSON schema, `debris validate`, `debris init` | todo |
 | 2 | `feat/sources-and-render` | `sources/{local,git}.py`, `render.py` | todo |
 | 3 | `feat/deb-build` | staging, control, dpkg, compose backend, maintainer scripts, `debris build` | todo |
