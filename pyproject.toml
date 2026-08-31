@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "debris"
+version = "0.1.0"
+description = "Build Debian packages for docker-compose applications from a JSON spec"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# Intentionally empty, and it must stay that way. The build host lives on a closed
+# network, so every runtime dependency is one more package to mirror. See CLAUDE.md.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+debris = "debris.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["debris*"]
+
+[tool.setuptools.package-data]
+debris = ["templates/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "docker: requires a reachable docker daemon",
+    "compose: requires the docker compose v2 plugin",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
