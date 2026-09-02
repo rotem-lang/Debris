@@ -6,28 +6,41 @@ is reviewable before any of the machinery behind it exists.
 """
 
 import argparse
+import re
 import sys
 from collections.abc import Sequence
+from typing import NoReturn
 
 from debris import __version__
 from debris.errors import DebrisError
 
-EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
+EXIT_INTERRUPTED = 130
+
+# A name that both `.env` and `docker compose --env-file` accept. Rejecting anything else
+# here turns an install-time failure on a closed-network machine into a build-time one.
+_ENV_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 def _key_value(text: str) -> tuple[str, str]:
     """Parse a `--var KEY=VALUE` argument."""
     key, sep, value = text.partition("=")
-    if not sep or not key:
+    if not sep:
         raise argparse.ArgumentTypeError(f"expected KEY=VALUE, got {text!r}")
+    if not _ENV_KEY.match(key):
+        raise argparse.ArgumentTypeError(
+            f"invalid environment variable name {key!r}: expected a letter or underscore "
+            "followed by letters, digits or underscores"
+        )
     return key, value
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="debris",
+        # Debris is never installed, so there is no `debris` executable to name here.
+        # argparse only detects `python -m` by itself from 3.14 on.
+        prog="python3 -m debris",
         description="Build Debian packages for docker-compose applications from a JSON spec.",
     )
     parser.add_argument("--version", action="version", version=f"debris {__version__}")
@@ -39,7 +52,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     build = sub.add_parser("build", help="build a .deb from a spec file")
     build.add_argument("spec", help="path to the JSON spec")
-    build.add_argument("-o", "--output-dir", default="dist", help="where to write the .deb")
+    build.add_argument(
+        "-o", "--output-dir", default="dist", help="where to write the .deb (default: dist)"
+    )
     build.add_argument(
         "--mode",
         choices=("online", "offline"),
@@ -55,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build.add_argument(
         "--source-dir",
-        help="use a local checkout instead of fetching the source (offline builds, tests)",
+        help="use a local checkout instead of fetching from git (air-gapped build hosts, tests)",
     )
     build.add_argument("--work-dir", help="staging directory (default: a temporary directory)")
     build.add_argument(
@@ -81,8 +96,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _todo(command: str, branch: str) -> int:
-    raise DebrisError(f"`debris {command}` is not implemented yet; it lands on {branch}")
+def _todo(command: str, branch: str) -> NoReturn:
+    raise DebrisError(
+        f"`python3 -m debris {command}` is not implemented yet; it lands on {branch}"
+    )
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
@@ -116,4 +133,4 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_ERROR
     except KeyboardInterrupt:
         print("debris: interrupted", file=sys.stderr)
-        return EXIT_ERROR
+        return EXIT_INTERRUPTED

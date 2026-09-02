@@ -22,7 +22,7 @@ python3 -m debris build    examples/online-app/spec.json -o dist/
 To work on Debris itself, create a venv for the test tooling:
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install pytest ruff
+python3 -m venv .venv && .venv/bin/pip install pytest
 PYTHONPATH=. .venv/bin/pytest -q
 ```
 

@@ -32,8 +32,8 @@ also introduces a deployment problem.
 - **Runtime dependencies: standard library only.** No `jsonschema`, no `PyYAML`, no
   `requests`. A dependency would mean mirroring packages into the closed network and
   reintroducing an install step, so spec validation is hand-written and `git` / `docker` /
-  `dpkg-deb` are invoked as subprocesses. `pytest` and `ruff` are dev-only and must never
-  be imported by anything under `debris/`.
+  `dpkg-deb` are invoked as subprocesses. `pytest` is dev-only and must never be imported
+  by anything under `debris/`.
 - **No debhelper.** Packages are built by staging a filesystem tree, generating
   `DEBIAN/control` plus maintainer scripts, and calling `dpkg-deb --build`. A build host
   needs only `dpkg-deb`, `git`, `docker` and Python 3.12.
@@ -105,6 +105,11 @@ a plausible-looking alternative that does not work.
 - **`postinst` does not start the stack by default** (`install.start_on_install`).
   Installing a package and having containers come up unannounced is surprising; the admin
   runs `<pkg>-start`.
+- **`--mode` must default to `None`, not to a mode.** It is an *override*: absent means
+  "use `deployment.mode` from the spec". Giving the flag a default makes the spec field
+  permanently unreachable and makes `validate` (which has no `--mode`) disagree with
+  `build` about the same file. Offline-by-default belongs in the spec loader, where
+  `deployment.mode` defaults to `"offline"` when the key is absent.
 
 ## Commands
 
@@ -122,11 +127,11 @@ whenever the build host can't reach the git server.
 Development tooling lives in a throwaway venv, needed only to run the tests and linter:
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install pytest ruff   # one-time setup
-PYTHONPATH=. .venv/bin/pytest -q   # tests
-.venv/bin/ruff check .             # lint
-.venv/bin/ruff format .            # format
+python3 -m venv .venv && .venv/bin/pip install pytest   # one-time setup
+PYTHONPATH=. .venv/bin/pytest -q                       # tests
 ```
+
+There is no linter or formatter. Style is a review concern: match the surrounding code.
 
 `PYTHONPATH=.` is required: Debris is never installed, and pytest does not put the
 repository root on `sys.path` by itself, so without it every test fails with

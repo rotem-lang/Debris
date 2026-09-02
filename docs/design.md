@@ -32,7 +32,8 @@ Non-goals for v1: systemd units, k8s/Helm backends, apt-repo publishing, vendori
 - **No install step and no packaging config.** Debris is delivered by `git bundle`-ing the
   repository into the closed network and running it from the checkout as `python3 -m debris`.
   This is only possible while the stdlib-only rule holds.
-- `pytest` and `ruff` are dev-only, installed into a throwaway `.venv`. Tests run as
+- `pytest` is the only dev tool, installed into a throwaway `.venv`. There is no linter or
+  formatter — style is a review concern. Tests run as
   `PYTHONPATH=. .venv/bin/pytest`, since Debris is never installed.
 - Verified available on this machine: `dpkg-deb`, `dpkg-buildpackage`, `docker`, Python 3.12. **`docker compose` (v2 plugin) is not installed here** — offline-mode image baking only needs `docker pull`/`docker save`, so builds work, but any test that shells out to `docker compose` must skip when the plugin is absent.
 
@@ -73,7 +74,7 @@ This is the core deliverable — everything else is machinery around it. A singl
 
   "deployment": {
     "kind": "compose",                // future: "helm" | "manifests"
-    "mode": "online",                 // "online" | "offline"
+    "mode": "online",                 // "online" | "offline"; defaults to "offline" if absent
 
     "source": {
       "kind": "git",                  // "git" | "local"
@@ -195,7 +196,7 @@ debris/
 schema/debris.schema.json    # editor autocomplete only, not runtime validation
 examples/online-app/  examples/offline-app/
 tests/
-ruff.toml  README.md  CLAUDE.md
+README.md  CLAUDE.md
 ```
 
 Two registries (`sources`, `backends`) keep the extension points explicit — a future `backends/helm.py` implements the same protocol and the CLI needs no changes.
@@ -251,8 +252,8 @@ Branches follow the existing `ref/slim-gitignore` convention (`<type>/<kebab-cas
 
 | # | Branch | Scope | Depends on |
 |---|---|---|---|
-| 0 | `chore/scaffold` | `CLAUDE.md`, `docs/design.md`, `debris/` package with `cli.py` argparse skeleton, `conftest.py`, `ruff.toml`, `tests/` smoke tests, `.gitignore` touch-up | — |
-| 1 | `feat/spec-validation` | `spec.py` dataclasses + loader + hand-written validator, `errors.py`, `schema/debris.schema.json`, `debris validate`, `debris init` | 0 |
+| 0 | `chore/scaffold` | `CLAUDE.md`, `docs/design.md`, `debris/` package with `cli.py` argparse skeleton, `tests/` smoke tests, `.gitignore` touch-up | — |
+| 1 | `feat/spec-validation` | `spec.py` dataclasses + loader + hand-written validator (incl. `deployment.mode` defaulting to `"offline"`), `errors.py`, `schema/debris.schema.json`, `debris validate`, `debris init` | 0 |
 | 2 | `feat/sources-and-render` | `sources/` (protocol + registry, `local.py`, `git.py`), `render.py` | 1 |
 | 3 | `feat/deb-build` | `staging.py`, `control.py`, `dpkg.py`, `builder.py`, `backends/compose.py`, maintainer-script templates, `debris build`, `debris inspect` | 2 |
 | 4 | `feat/offline-images` | `images.py`, `images/images.tar` staging, `docker load` in postinst | 3 |
@@ -262,7 +263,7 @@ Branches follow the existing `ref/slim-gitignore` convention (`<type>/<kebab-cas
 
 **Sequencing.** 0→1→2→3 is a hard chain — each needs the previous one's types to exist. Once 3 lands, **4, 5 and 6 are independent and can run in parallel**; 7 closes it out. Branch 3 is the large one and is the natural place to stop and review, since it produces the first installable `.deb`.
 
-**Definition of done per branch:** `pytest` green, `ruff check` clean, and for 3–6 an artifact or container assertion actually exercised — not just unit tests.
+**Definition of done per branch:** `pytest` green, and for 3–6 an artifact or container assertion actually exercised — not just unit tests.
 
 ### Branch 0 detail: `CLAUDE.md`
 
@@ -272,7 +273,7 @@ Written first so every later session starts with the context this planning conve
 - **Hard constraints** — stdlib-only at runtime (no pip deps to mirror); `git`/`docker`/`dpkg-deb` as subprocesses; build must work with no internet and no debhelper.
 - **Architecture** — the spec-file-driven pipeline (fetch → render → stage → `dpkg-deb`), the `sources/` and `backends/` registries and why they exist (k8s later), and the install layout.
 - **The decisions that aren't obvious from the code**, each with its reasoning: why one version on disk at a time (dpkg deletes the old version's files on upgrade, so multi-version coexistence under a single package name is not possible); why rollback is "archive every `.deb`" rather than a symlink flip; why `current` is a shipped symlink instead of postinst logic; why offline image lists are explicit in the spec rather than parsed from compose (avoids a YAML dependency); why runtime data must not be bind-mounted inside the version directory.
-- **Commands** — `pytest`, `ruff check`, `python3 -m debris build examples/online-app/spec.json -o dist/ --source-dir ...`.
+- **Commands** — `pytest`, `python3 -m debris build examples/online-app/spec.json -o dist/ --source-dir ...`.
 - **Conventions** — branch naming, `dev` as the integration branch, POSIX `sh` for generated scripts.
 - **Status** — the branch table above, with what's landed.
 
