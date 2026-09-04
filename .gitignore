@@ -4,8 +4,14 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+dist/
+*.deb
 
 __pypackages__/
+
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/
 
 # IDE
 .idea
