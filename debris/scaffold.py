@@ -11,15 +11,15 @@ from pathlib import Path
 
 from debris.errors import SpecError
 from debris.spec import HELPER_COMMANDS, PACKAGE_NAME, PACKAGE_NAME_EXPECTED, SCHEMA_VERSION
-from debris import __version__
 
 SPEC_FILENAME = "spec.json"
 
 _REGISTRY = "registry.corp.local:5000"
 _GIT_HOST = "git.corp.local"
+_VERSION = "0.1.0"
 
 
-def scaffold_spec(name: str, *, offline: bool) -> dict:
+def scaffold_spec(name: str, *args, offline: bool) -> dict:
     """The spec `debris init` writes, as plain data so tests can assert on it."""
     return {
         "schema_version": SCHEMA_VERSION,
@@ -35,10 +35,10 @@ def scaffold_spec(name: str, *, offline: bool) -> dict:
 def _package_section(name: str) -> dict:
     return {
         "name": name,
-        "version": __version__,
+        "version": _VERSION,
         "architecture": "all",
-        "maintainer": "Ops Team <ops@corp.local>",
-        "description": f"{name}, deployed with docker compose",
+        "maintainer": "<ops@corp.local>",
+        "description": "<package-description>",
         "depends": ["docker-ce", "docker-compose-plugin"],
     }
 
@@ -59,7 +59,7 @@ def _deployment_section(name: str, *, offline: bool) -> dict:
         # Offline bakes the images in, so the list has to be explicit -- Debris will not
         # parse them out of the compose file (that would need a YAML dependency).
         mode_keys = {
-            "images": [f"{_REGISTRY}/{name}/app:{__version__}"],
+            "images": [f"{_REGISTRY}/{name}/app:{_VERSION}"],
             "remove_image_archive_after_load": False,
         }
     else:
@@ -71,7 +71,7 @@ def _deployment_section(name: str, *, offline: bool) -> dict:
         "source": {
             "kind": "git",
             "url": f"ssh://git@{_GIT_HOST}/apps/{name}.git",
-            "ref": f"v{__version__}",
+            "ref": f"v{_VERSION}",
             "path": "deploy",
         },
         "compose_files": ["docker-compose.yml"],
@@ -80,7 +80,7 @@ def _deployment_section(name: str, *, offline: bool) -> dict:
             "output": ".env",
             "strict": True,
             "vars": {
-                "APP_VERSION": __version__,
+                "APP_VERSION": _VERSION,
                 "REGISTRY": _REGISTRY,
                 # Runtime data must live outside /opt/<pkg>/<version>/, which dpkg
                 # deletes on upgrade. Pass the path in instead of bind-mounting there.
@@ -111,7 +111,7 @@ def _restart_entry(name: str) -> dict:
     }
 
 
-def write_scaffold(name: str, *, offline: bool, directory: Path | None = None) -> Path:
+def write_scaffold(name: str, *args, is_offline: bool = True, directory: Path | None = None) -> Path:
     """Create `<name>/spec.json` and return its path.
 
     Refuses to overwrite an existing spec: `init` is for starting, and clobbering an edited
@@ -129,5 +129,5 @@ def write_scaffold(name: str, *, offline: bool, directory: Path | None = None) -
         raise SpecError(f"{path}: already exists; delete it or choose another name")
 
     target.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(scaffold_spec(name, offline=offline), indent=2) + "\n")
+    path.write_text(json.dumps(scaffold_spec(name, offline=is_offline), indent=4) + "\n")
     return path

@@ -13,8 +13,8 @@ import re
 
 SCHEMA_VERSION = 1
 
-#: Backends implemented today. `sources/` and `backends/` are registries precisely so this
-#: tuple grows without the CLI or the packaging code changing.
+# Backends implemented today. `sources/` and `backends/` are registries precisely so this
+# tuple grows without the CLI or the packaging code changing.
 BACKEND_KINDS = ("compose",)
 SOURCE_KINDS = ("git", "local")
 MODES = ("online", "offline")
@@ -59,8 +59,8 @@ _FILE_MODE_EXPECTED = (
 )
 _REGISTRY_HOST = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]{1,5})?\Z")
 
-#: A name that both `.env` and `docker compose --env-file` accept. `cli.py` reuses this so
-#: `--var` and `deployment.env.vars` cannot disagree about what a variable may be called.
+# A name that both `.env` and `docker compose --env-file` accept. `cli.py` reuses this so
+# `--var` and `deployment.env.vars` cannot disagree about what a variable may be called.
 ENV_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 ENV_KEY_RULE = "a letter or underscore followed by letters, digits or underscores"
 ENV_KEY_EXPECTED = f"an environment variable name: {ENV_KEY_RULE}"

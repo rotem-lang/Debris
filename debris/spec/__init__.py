@@ -1,13 +1,13 @@
-"""The JSON spec: dataclasses, loader, and hand-written validator.
+"""The JSON spec: dataclasses, loader, and handwritten validator.
 
 Debris targets machines with no internet, where a broken package is expensive to diagnose
 and awkward to replace. The rule here follows from that: anything checkable at build time
 gets checked at build time, and every message names the exact JSON path that is wrong.
 
-Validation is hand-written rather than delegated to `jsonschema` because a runtime
+Validation is handwritten rather than delegated to `jsonschema` because a runtime
 dependency would have to be mirrored into the closed network (see CLAUDE.md). That trade
 buys something beyond dependency hygiene: a schema cannot express the cross-field rules in
-`crosscheck.py`, and those are the ones that actually prevent broken installs.
+`crosscheck.py`, and those are the ones that actually prevent broken installations.
 
 The pieces, in dependency order:
 

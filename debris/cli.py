@@ -162,7 +162,7 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    path = write_scaffold(args.name, offline=args.offline)
+    path = write_scaffold(args.name, is_offline=args.offline)
     print(f"wrote {path}")
     print(f"edit it, then run: python3 -m debris validate {path}")
     return 0
