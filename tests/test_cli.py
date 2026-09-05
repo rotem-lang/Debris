@@ -5,6 +5,7 @@ it exists, so later branches can only extend it, not silently reshape it.
 """
 
 import argparse
+import json
 
 import pytest
 
@@ -31,15 +32,7 @@ def test_version_flag(capsys):
     assert "debris" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["validate", "spec.json"],
-        ["build", "spec.json"],
-        ["init", "demo"],
-        ["inspect", "pkg.deb"],
-    ],
-)
+@pytest.mark.parametrize("argv", [["build", "spec.json"], ["inspect", "pkg.deb"]])
 def test_unimplemented_commands_fail_cleanly(argv, capsys):
     """A stub must report a DebrisError, not leak a traceback."""
     assert main(argv) == EXIT_ERROR
@@ -96,3 +89,80 @@ def test_build_defaults():
     assert args.source_dir is None
     assert args.work_dir is None
     assert args.keep_work is False
+
+
+def test_init_then_validate(tmp_path, monkeypatch, capsys):
+    """The loop a new user runs first.
+
+    `init` writes into the working directory, so this also pins down that it does not
+    write to the spec's own location or to $HOME.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["init", "acme-portal"]) == 0
+    assert (tmp_path / "acme-portal" / "spec.json").is_file()
+
+    capsys.readouterr()
+    assert main(["validate", "acme-portal/spec.json"]) == 0
+    out = capsys.readouterr().out
+    assert ": ok" in out
+    assert "acme-portal 0.1.0 (all)" in out
+
+
+def test_init_offline_scaffolds_offline(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    main(["init", "acme-portal", "--offline"])
+    capsys.readouterr()
+
+    main(["validate", "acme-portal/spec.json"])
+    assert "mode      offline" in capsys.readouterr().out
+
+
+def test_validate_reports_every_problem_and_exits_one(tmp_path, capsys):
+    spec = tmp_path / "spec.json"
+    spec.write_text(json.dumps({"schema_version": 1}))
+
+    assert main(["validate", str(spec)]) == EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "debris: error:" in err
+    assert "package: required key is missing" in err
+    assert "deployment: required key is missing" in err
+
+
+def test_validate_prints_the_resolved_defaults(tmp_path, capsys):
+    """The defaults are what a build will use, and they are invisible in the file.
+
+    That `validate` prints them is most of what makes it worth running.
+    """
+    spec = tmp_path / "spec.json"
+    spec.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "package": {
+                    "name": "acme-portal",
+                    "version": "1.4.2",
+                    "maintainer": "Ops <ops@corp.local>",
+                    "description": "ACME Portal",
+                },
+                "deployment": {
+                    "source": {"kind": "git", "url": "ssh://git/a.git", "ref": "v1.4.2"},
+                    "images": ["registry.corp.local:5000/acme/portal:1.4.2"],
+                },
+            }
+        )
+    )
+
+    assert main(["validate", str(spec)]) == 0
+    out = capsys.readouterr().out
+    assert "install   /opt/acme-portal/1.4.2" in out
+    assert "mode      offline" in out
+    assert "acme-portal-restart" in out
+
+
+def test_init_refusing_to_overwrite_is_a_clean_error(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    main(["init", "acme-portal"])
+
+    assert main(["init", "acme-portal"]) == EXIT_ERROR
+    assert "already exists" in capsys.readouterr().err

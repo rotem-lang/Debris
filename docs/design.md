@@ -180,6 +180,7 @@ The `current` symlink is staged as a real relative symlink inside the archive ra
 debris/
   __main__.py            cli.py            errors.py
   spec.py                # dataclasses + loader + hand-written validator
+  scaffold.py            # the starter spec `debris init` writes
   sources/               __init__.py (Source protocol + registry)
                          git.py    # shallow fetch, sparse-checkout of source.path
                          local.py  # copy from a directory
@@ -236,13 +237,24 @@ docker compose --project-name <pkg> --env-file /opt/<pkg>/current/.env \
 python3 -m debris validate <spec.json>              # schema + cross-field checks, no network
 python3 -m debris build    <spec.json> [-o dist/] [--mode online|offline] [--var K=V]
                             [--source-dir DIR] [--work-dir DIR] [--keep-work]
-python3 -m debris init     <name> [--offline]       # scaffold a spec + assets dir
+python3 -m debris init     <name> [--offline]       # write <name>/spec.json to edit
 python3 -m debris inspect  <file.deb>               # print the embedded .debris-manifest.json
 ```
 
 `--var` overrides `deployment.env.vars` for CI. `--source-dir` substitutes a local checkout for the git fetch — fast iteration, and the escape hatch when the build host can't reach git. Output follows Debian convention: `<name>_<version>_<arch>.deb`.
 
-Cross-field validation worth calling out, since these are the failures that would otherwise surface as a broken package on a machine that's awkward to reach: `mode: offline` requires a non-empty `images` list; `mode: online` requires `registry.host`; every `desktop_entries[].exec` that looks like a helper must match a generated helper name; `package.name` and `package.version` must match Debian's allowed character sets; `files[].source` must exist relative to the spec.
+`validate` reports **every** problem in one run, each prefixed with its JSON path, and on success prints the spec back with all defaults resolved — the defaults are what a build will actually use and they are invisible in the file itself.
+
+Cross-field validation worth calling out, since these are the failures that would otherwise surface as a broken package on a machine that's awkward to reach:
+
+- `mode: offline` requires a non-empty `images` list; `mode: online` requires `registry.host`. The `--mode` override is applied *before* validation, so building an online spec with `--mode offline` is still checked for images.
+- Every `images[]` entry must carry an explicit tag or digest. An untagged reference means `:latest`, which may not exist in the internal registry and is not the same image tomorrow.
+- Every `desktop_entries[].exec` that looks like a helper must match a generated helper name, and `helpers.enabled: false` makes all of them dead. A restart button that does nothing is the whole failure this catches.
+- `package.name`, `package.version`, `package.maintainer` and `files[].mode` must match what dpkg accepts, so `dpkg-deb` cannot fail late with a worse message. Epochs are rejected outright.
+- `files[].source` and `hooks.*` must exist relative to the spec, and a `local` source must be a real directory.
+- `deployment.env.vars` without a `template` has nowhere to substitute into; var names must be usable in a `.env` file; values must be strings, because everything in a `.env` file is text.
+- Paths inside the fetched source must be relative and free of `..`; `desktop_entries[].filename` and `files[].dest` must not collide with each other.
+- An unknown key anywhere is an error with a suggestion, not a silent no-op.
 
 ---
 
@@ -253,7 +265,7 @@ Branches follow the existing `ref/slim-gitignore` convention (`<type>/<kebab-cas
 | # | Branch | Scope | Depends on |
 |---|---|---|---|
 | 0 | `chore/scaffold` | `CLAUDE.md`, `docs/design.md`, `debris/` package with `cli.py` argparse skeleton, `tests/` smoke tests, `.gitignore` touch-up | — |
-| 1 | `feat/spec-validation` | `spec.py` dataclasses + loader + hand-written validator (incl. `deployment.mode` defaulting to `"offline"`), `errors.py`, `schema/debris.schema.json`, `debris validate`, `debris init` | 0 |
+| 1 | `feat/spec-validation` | `spec.py` dataclasses + loader + hand-written validator (incl. `deployment.mode` defaulting to `"offline"`), `scaffold.py`, `schema/debris.schema.json`, `debris validate`, `debris init` | 0 |
 | 2 | `feat/sources-and-render` | `sources/` (protocol + registry, `local.py`, `git.py`), `render.py` | 1 |
 | 3 | `feat/deb-build` | `staging.py`, `control.py`, `dpkg.py`, `builder.py`, `backends/compose.py`, maintainer-script templates, `debris build`, `debris inspect` | 2 |
 | 4 | `feat/offline-images` | `images.py`, `images/images.tar` staging, `docker load` in postinst | 3 |

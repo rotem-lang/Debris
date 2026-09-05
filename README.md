@@ -15,9 +15,13 @@ There is nothing to install — Debris uses only the Python standard library, so
 the repository and run it in place:
 
 ```bash
-python3 -m debris validate examples/online-app/spec.json
-python3 -m debris build    examples/online-app/spec.json -o dist/
+python3 -m debris init     acme-portal        # writes acme-portal/spec.json to edit
+python3 -m debris validate acme-portal/spec.json
+python3 -m debris build    acme-portal/spec.json -o dist/
 ```
+
+`validate` reports every problem in the spec at once, with the JSON path of each, and
+prints the spec back with all its defaults resolved.
 
 To work on Debris itself, create a venv for the test tooling:
 

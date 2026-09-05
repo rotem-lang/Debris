@@ -48,6 +48,7 @@ The pipeline is `fetch → render → stage → dpkg-deb`, orchestrated by `buil
 | Module | Role |
 |---|---|
 | `spec.py` | Dataclasses, loader and hand-written validator for the JSON spec |
+| `scaffold.py` | The starter spec `debris init` writes |
 | `sources/` | `Source` protocol + registry; `git.py` (shallow fetch, sparse checkout), `local.py` |
 | `backends/` | `Backend` protocol + registry; `compose.py` is the only v1 implementation |
 | `render.py` | `${VAR}` substitution for `.env`, strict about unresolved placeholders |
@@ -110,19 +111,44 @@ a plausible-looking alternative that does not work.
   permanently unreachable and makes `validate` (which has no `--mode`) disagree with
   `build` about the same file. Offline-by-default belongs in the spec loader, where
   `deployment.mode` defaults to `"offline"` when the key is absent.
+- **Validation reports every problem at once, not the first.** A round trip to a
+  closed-network machine is expensive, so one `validate` has to be enough to fix the whole
+  file. That is what shapes `_Reader` in `spec.py`: a failed read records a problem and
+  returns `None` instead of raising, and `load_spec` refuses to return a `Spec` while any
+  problem is outstanding. The refusal is what keeps the `str` annotations on the dataclasses
+  honest even though a reader can hand back `None` — do not relax it.
+- **Every spec default lives in the loader.** Dataclass fields carry no defaults at all.
+  Splitting them between the dataclass and the loader is how a value ends up meaning one
+  thing in `validate` and another in `build`, which is the same failure the `--mode` bullet
+  above describes.
+- **An unknown key in a spec is an error, not a warning.** A misspelt `dependes` is silently
+  ignored otherwise, and the mistake surfaces as a missing feature on the target rather than
+  as a build failure. `reject_unknown` suggests the nearest real key.
+- **`schema/debris.schema.json` is editor autocomplete only and is never read at runtime.**
+  `spec.py` is authoritative; JSON Schema cannot express the cross-field rules that actually
+  prevent broken installs, and `jsonschema` would be a dependency to mirror. Because nothing
+  breaks when the schema drifts, `tests/test_schema.py` compares its patterns, defaults and
+  key sets against `spec.py` — keep that test passing rather than deleting the schema.
 
 ## Commands
 
 Run Debris straight from the repository root:
 
 ```bash
-python3 -m debris validate examples/online-app/spec.json
-python3 -m debris build    examples/online-app/spec.json -o dist/ --source-dir /path/to/checkout
+python3 -m debris init     demo              # writes demo/spec.json, then edit it
+python3 -m debris validate demo/spec.json
+python3 -m debris build    demo/spec.json -o dist/ --source-dir /path/to/checkout
 python3 -m debris inspect  dist/acme-portal_1.4.2_all.deb
 ```
 
+`validate` prints the spec with every default resolved, which is the point of running it —
+the defaults are what a build will use and they are invisible in the file.
+
 `--source-dir` substitutes a local checkout for the git fetch. Use it in tests and
 whenever the build host can't reach the git server.
+
+The `examples/` directory referenced elsewhere in this file lands on `docs/readme-examples`;
+until then `debris init` is the way to get a spec that validates.
 
 Development tooling lives in a throwaway venv, needed only to run the tests and linter:
 
@@ -157,7 +183,7 @@ Build order — `0 → 1 → 2 → 3` is a hard chain; once 3 lands, 4, 5 and 6 
 | # | Branch | Scope | State |
 |---|---|---|---|
 | 0 | `chore/scaffold` | `CLAUDE.md`, `docs/design.md`, package + CLI skeleton, tests | done |
-| 1 | `feat/spec-validation` | `spec.py`, `errors.py`, JSON schema, `debris validate`, `debris init` | todo |
+| 1 | `feat/spec-validation` | `spec.py`, `scaffold.py`, JSON schema, `debris validate`, `debris init` | done |
 | 2 | `feat/sources-and-render` | `sources/{local,git}.py`, `render.py` | todo |
 | 3 | `feat/deb-build` | staging, control, dpkg, compose backend, maintainer scripts, `debris build` | todo |
 | 4 | `feat/offline-images` | `images.py`, `images.tar` staging, `docker load` | todo |

@@ -1,0 +1,281 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://corp.local/debris/debris.schema.json",
+  "title": "Debris package spec",
+  "$comment": "Editor autocomplete only. Debris NEVER reads this file: validation is hand-written in debris/spec.py, because a jsonschema dependency would have to be mirrored into the closed network. debris/spec.py is authoritative, and it enforces cross-field rules this schema cannot express (offline mode requiring images, desktop entries matching a generated helper, files[].source existing on disk). If the two disagree, this file is the one that is wrong.",
+  "type": "object",
+  "required": ["schema_version", "package", "deployment"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Spec format version. Only 1 exists."
+    },
+
+    "package": {
+      "type": "object",
+      "description": "The DEBIAN/control fields.",
+      "required": ["name", "version", "maintainer", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9+.-]+$",
+          "description": "Debian package name. Also the default install directory and helper prefix."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9][A-Za-z0-9.+~]*(-[A-Za-z0-9.+~]+)*$",
+          "description": "Debian version, e.g. 1.4.2 or 1.4.2-1. Epochs are not supported."
+        },
+        "architecture": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+          "default": "all"
+        },
+        "maintainer": {
+          "type": "string",
+          "pattern": "^\\S[^<>]*<[^<>@\\s]+@[^<>@\\s]+>$",
+          "description": "Name <email@host>."
+        },
+        "description": {
+          "type": "string",
+          "pattern": "^[^\\n]+$",
+          "description": "One-line synopsis. Longer text goes in long_description."
+        },
+        "long_description": { "type": ["string", "null"] },
+        "section": { "type": "string", "default": "misc" },
+        "priority": {
+          "enum": ["required", "important", "standard", "optional", "extra"],
+          "default": "optional"
+        },
+        "homepage": { "type": ["string", "null"] },
+        "depends": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": [],
+          "description": "Resolved from the target's own apt configuration, i.e. the internal mirror."
+        },
+        "recommends": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "conflicts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "replaces": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+
+    "install": {
+      "type": "object",
+      "description": "Where the package puts itself on the target.",
+      "additionalProperties": false,
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "pattern": "^(/[A-Za-z0-9._+~-]+)+$",
+          "default": "/opt"
+        },
+        "dir_name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9+.-]+$",
+          "description": "Defaults to package.name."
+        },
+        "version_dir": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._+~-]+$",
+          "description": "Defaults to package.version."
+        },
+        "current_symlink": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ship /opt/<pkg>/current as a real relative symlink inside the archive. dpkg repoints it on upgrade and downgrade with no maintainer-script logic."
+        },
+        "start_on_install": {
+          "type": "boolean",
+          "default": false,
+          "description": "Bring the stack up in postinst. Off by default: containers starting unannounced during apt install is surprising."
+        },
+        "stop_on_remove": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run `docker compose down` in prerm."
+        }
+      }
+    },
+
+    "deployment": {
+      "type": "object",
+      "required": ["source"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["compose"],
+          "default": "compose",
+          "description": "Backend. Only compose exists in v1; helm and manifests are future entries in the same registry."
+        },
+        "mode": {
+          "enum": ["online", "offline"],
+          "default": "offline",
+          "description": "offline bakes images into the .deb and docker-loads them; online pulls from the internal registry in postinst. Overridable with `--mode` at build time."
+        },
+
+        "source": {
+          "type": "object",
+          "description": "Where the compose file and its neighbours come from.",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "enum": ["git", "local"], "default": "git" },
+            "url": { "type": "string", "description": "git only." },
+            "ref": { "type": "string", "description": "git only: tag, branch or full SHA." },
+            "path": {
+              "type": "string",
+              "description": "Subpath inside the repository for git; the directory itself for local (relative paths resolve against the spec file)."
+            },
+            "insecure_tls": { "type": "boolean", "default": false, "description": "git only." }
+          }
+        },
+
+        "compose_files": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[^/].*$" },
+          "default": ["docker-compose.yml"],
+          "description": "Relative to source.path."
+        },
+        "extra_files": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[^/].*$" },
+          "description": "Copied verbatim from the source."
+        },
+        "render_templates": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[^/].*$" },
+          "description": "Extra fetched files to run ${VAR} substitution on."
+        },
+
+        "env": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "template": {
+              "type": ["string", "null"],
+              "default": null,
+              "description": "Path within source.path. null means the app ships no env file."
+            },
+            "output": { "type": "string", "default": ".env" },
+            "strict": {
+              "type": "boolean",
+              "default": true,
+              "description": "An unresolved ${VAR} fails the build rather than shipping an empty value."
+            },
+            "vars": {
+              "type": "object",
+              "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+              "additionalProperties": {
+                "type": "string",
+                "description": "Must be a string: everything in a .env file is text."
+              }
+            }
+          }
+        },
+
+        "registry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": {
+              "type": ["string", "null"],
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]{1,5})?$",
+              "description": "Required in online mode."
+            },
+            "require_login": {
+              "type": "boolean",
+              "default": false,
+              "description": "postinst fails early if the target is not logged in."
+            }
+          }
+        },
+
+        "images": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Required in offline mode. Explicit rather than parsed out of the compose file, which would need a YAML dependency. Every entry must carry a tag or digest."
+        },
+        "remove_image_archive_after_load": {
+          "type": "boolean",
+          "default": false,
+          "description": "Delete images/images.tar after docker load, to reclaim disk on the target."
+        }
+      }
+    },
+
+    "helpers": {
+      "type": "object",
+      "description": "/usr/bin wrappers. Each resolves /opt/<pkg>/current at call time, so they survive upgrades untouched.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "prefix": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9+.-]+$",
+          "description": "Defaults to package.name, giving /usr/bin/<prefix>-start and friends."
+        },
+        "commands": {
+          "type": "array",
+          "items": { "enum": ["start", "stop", "restart", "status", "logs", "compose"] },
+          "default": ["start", "stop", "restart", "status", "logs", "compose"]
+        }
+      }
+    },
+
+    "desktop_entries": {
+      "type": "array",
+      "description": "Launchers in /usr/share/applications. This is how a 'Restart' button works.",
+      "items": {
+        "type": "object",
+        "required": ["filename", "name", "exec"],
+        "additionalProperties": false,
+        "properties": {
+          "filename": { "type": "string", "pattern": "^[A-Za-z0-9._+-]+\\.desktop$" },
+          "name": { "type": "string", "minLength": 1 },
+          "comment": { "type": ["string", "null"] },
+          "exec": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Usually one of the generated helpers, e.g. acme-portal-restart."
+          },
+          "icon": { "type": ["string", "null"] },
+          "terminal": { "type": "boolean", "default": false },
+          "categories": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+
+    "files": {
+      "type": "array",
+      "description": "Extra files shipped from beside the spec.",
+      "items": {
+        "type": "object",
+        "required": ["source", "dest"],
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "pattern": "^[^/].*$",
+            "description": "Relative to the spec file's own directory."
+          },
+          "dest": { "type": "string", "pattern": "^(/[A-Za-z0-9._+~-]+)+$" },
+          "mode": { "type": "string", "pattern": "^0?[0-7]{3}$", "default": "0644" }
+        }
+      }
+    },
+
+    "hooks": {
+      "type": "object",
+      "description": "Shell fragments appended to the generated maintainer scripts. Paths are relative to the spec file's own directory.",
+      "additionalProperties": false,
+      "properties": {
+        "postinst": { "type": ["string", "null"] },
+        "prerm": { "type": ["string", "null"] },
+        "postrm": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
